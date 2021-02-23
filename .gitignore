@@ -1,0 +1,6 @@
+.aws-sam
+.devcontainer
+.env
+build
+dist
+samconfig.toml

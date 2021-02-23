@@ -1,0 +1,4 @@
+*.md
+build
+data
+dist

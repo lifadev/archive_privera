@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Transform: AWS::Serverless-2016-10-31
+
+Description: Privera Proxy Community Edition (CE)
+
+Parameters:
+  UAPropertyID:
+    Type: String
+    Description: "The property ID of the Google Analytics property you wish to work with (UA-XXXXX-Y)."
+
+Resources:
+  API:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: Privera Proxy (CE)
+      ProtocolType: HTTP
+
+  APIStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref API
+      StageName: $default
+      AutoDeploy: true
+
+  EventsStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+
+  CollectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal: { Service: lambda.amazonaws.com }
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: WriteEvent
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: !GetAtt EventsStream.Arn
+                Action: kinesis:PutRecord
+
+  CollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt CollectorRole.Arn
+      CodeUri: ./collector
+      Handler: main
+      Runtime: go1.x
+      Timeout: 3
+      Environment:
+        Variables:
+          EVENTS_STREAM: !Ref EventsStream
+
+  CollectorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${CollectorFunction}
+      RetentionInDays: 1
+
+  APICollectorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt CollectorFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${API}/*
+
+  APICollectorIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref API
+      IntegrationType: AWS_PROXY
+      PayloadFormatVersion: 2.0
+      IntegrationMethod: POST
+      IntegrationUri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CollectorFunction.Arn}/invocations
+
+  APICollectorRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref API
+      RouteKey: $default
+      Target: !Sub integrations/${APICollectorIntegration}
+
+  MappingsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: IID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: IID
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: TTL
+        Enabled: true
+
+  DispatcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal: { Service: lambda.amazonaws.com }
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaKinesisExecutionRole
+      Policies:
+        - PolicyName: CreateMapping
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Resource: !GetAtt MappingsTable.Arn
+                Action:
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+
+  DispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Role: !GetAtt DispatcherRole.Arn
+      CodeUri: ./dispatcher
+      Handler: main
+      Runtime: go1.x
+      Timeout: 30
+      MemorySize: 1024
+      Environment:
+        Variables:
+          MAPPINGS_TABLE: !Ref MappingsTable
+          UA_PROPERTY_ID: !Ref UAPropertyID
+
+  DispatcherLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${DispatcherFunction}
+      RetentionInDays: 1
+
+  EventsStreamDispatcherMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    DependsOn: DispatcherRole
+    Properties:
+      EventSourceArn: !GetAtt EventsStream.Arn
+      FunctionName: !Ref DispatcherFunction
+      StartingPosition: LATEST
+      BatchSize: 20
+      Enabled: true
+
+Outputs:
+  APIEndpoint:
+    Value: !GetAtt API.ApiEndpoint
