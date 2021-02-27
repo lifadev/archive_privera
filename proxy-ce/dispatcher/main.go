@@ -256,7 +256,6 @@ func hydrate(ctx context.Context, dynsvc *dynamodb.Client, table string, evts []
 func populate(ctx context.Context, dynsvc *dynamodb.Client, table string, evts []*OutEvent) error {
 	var items []types.WriteRequest
 	seen := make(map[string]string)
-	ttl := time.Now().UTC().Truncate(24 * time.Hour).Add(24*time.Hour + 15*time.Minute).Unix()
 	for _, evt := range evts {
 		if oid, ok := seen[evt.IID]; ok {
 			evt.OID = &oid
@@ -267,6 +266,7 @@ func populate(ctx context.Context, dynsvc *dynamodb.Client, table string, evts [
 			if err != nil {
 				return err
 			}
+			ttl := time.Unix(0, evt.Timestamp*int64(time.Millisecond)).Truncate(24 * time.Hour).Add(24*time.Hour + 15*time.Minute).Unix()
 			item, _ := attributevalue.MarshalMap(map[string]interface{}{"IID": evt.IID, "OID": oid, "TTL": ttl})
 			items = append(items, types.WriteRequest{PutRequest: &types.PutRequest{Item: item}})
 			evt.OID = &oid
