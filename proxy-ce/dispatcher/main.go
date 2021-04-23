@@ -75,18 +75,18 @@ var (
 	mappingsTable = os.Getenv("MAPPINGS_TABLE")
 	uaPropertyID  = os.Getenv("UA_PROPERTY_ID")
 
-	//go:embed data/geoip_20210216.mmdb
+	//go:embed data/geoip_20210420.mmdb
 	geoIPRaw []byte
 	geoIPs   *maxminddb.Reader
 	ipv4Mask = net.CIDRMask(24, 32)
 	ipv6Mask = net.CIDRMask(48, 128)
 
-	//go:embed data/geoid_20201118.gob
+	//go:embed data/geoid_20210416.gob
 	geoIDRaw   []byte
 	geoIDs     map[GeoIDKey]string
 	geoIDCache = lru.New(100000)
 
-	//go:embed data/ua_20210213.yaml
+	//go:embed data/ua_20210320.yaml
 	uaRaw   []byte
 	uap     *uaparser.Parser
 	uaCache = lru.New(100000)

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	dbName = "geoid_20201118"
+	dbName = "geoid_20210416"
 )
 
 type Key struct {
