@@ -53,7 +53,7 @@ type InEvent struct {
 	Timestamp int64
 	IP        string
 	UA        string
-	Payload   string
+	Payloads  []string
 }
 
 type OutEvent struct {
@@ -179,14 +179,19 @@ func decode(evt *InEvent, pid string, hkey []byte) *OutEvent {
 	geoID := locateIP(evt.IP)
 	ua := redactUA(evt.UA)
 
-	params, err := url.ParseQuery(evt.Payload)
-	if err != nil {
-		return nil
-	}
 	pld := make(map[string]string)
-	for k, v := range params {
-		if len(v) == 1 && len(v[0]) > 0 {
-			pld[k] = v[0]
+	for _, data := range evt.Payloads {
+		if err := json.Unmarshal([]byte(data), &pld); err == nil {
+			continue
+		}
+		params, err := url.ParseQuery(data)
+		if err != nil {
+			return nil
+		}
+		for k, v := range params {
+			if len(v) == 1 && len(v[0]) > 0 {
+				pld[k] = v[0]
+			}
 		}
 	}
 
@@ -195,6 +200,20 @@ func decode(evt *InEvent, pid string, hkey []byte) *OutEvent {
 	}
 
 	return &OutEvent{Timestamp: evt.Timestamp, IID: iid, GeoID: geoID, UA: ua, Payload: pld}
+}
+
+func clean(org string, min bool) string {
+	v, err := url.Parse(org)
+	if err != nil {
+		return ""
+	}
+	var c *url.URL
+	if min {
+		c = &url.URL{Scheme: v.Scheme, Host: v.Host}
+	} else {
+		c = &url.URL{Scheme: v.Scheme, Host: v.Host, Path: v.Path}
+	}
+	return c.String()
 }
 
 func encode(evt *OutEvent, pid string, now int64) string {
@@ -211,10 +230,10 @@ func encode(evt *OutEvent, pid string, now int64) string {
 		params.Add("dt", dt)
 	}
 	if dl, ok := evt.Payload["url"]; ok {
-		params.Add("dl", dl)
-		if dr, ok := evt.Payload["referrer"]; ok {
+		params.Add("dl", clean(dl, false))
+		if dr, ok := evt.Payload["referrer"]; ok && dr != "" {
 			if !strings.HasPrefix(dl, dr) {
-				params.Add("dr", dr)
+				params.Add("dr", clean(dr, true))
 			}
 		}
 	}

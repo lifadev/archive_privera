@@ -23,7 +23,7 @@ type Event struct {
 	Timestamp int64
 	IP        string
 	UA        string
-	Payload   string
+	Payloads  []string
 }
 
 func main() {
@@ -41,7 +41,7 @@ func Handle(ctx context.Context, in *events.APIGatewayV2HTTPRequest) (*events.AP
 		Timestamp: in.RequestContext.TimeEpoch,
 		IP:        ip,
 		UA:        ua,
-		Payload:   in.Body,
+		Payloads:  []string{in.RawQueryString, in.Body},
 	}
 
 	pkh := md5.New()
