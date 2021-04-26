@@ -24,7 +24,7 @@
   });
   doc.referrer && payload.set("referrer", clean(doc.referrer), true);
 
-  const res = await fetch(endpoint, {
+  await fetch(endpoint, {
     method: "POST",
     headers: { "content-type": "text/plain; charset=UTF-8" },
     referrerPolicy: "no-referrer",
